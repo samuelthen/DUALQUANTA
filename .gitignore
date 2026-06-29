@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.eggs/
+wandb/
+runs/
+logs/
+*.log
+.DS_Store
+*.swp
+# checkpoints/  <-- intentionally NOT ignored; all best.pth files are tracked
