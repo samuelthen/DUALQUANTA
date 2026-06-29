@@ -1,6 +1,6 @@
 # Tables 3 & 4: DUALQUANTA and color sensing — shared defaults
 # Ablation 3 (cmos_luma_softmax) unless overridden.
-# Stage 1 checkpoint: checkpoints/table3_4_dualquanta/stage1_mono_dcn_h8.pth
+# Stage 1 checkpoint: checkpoints/table3_4_DUALQUANTA/stage1_mono_dcn_h8.pth
 # Stage 2 is trained by train_color.py --ablation 3 --stage1_ckpt ...
 model:
   T: 11

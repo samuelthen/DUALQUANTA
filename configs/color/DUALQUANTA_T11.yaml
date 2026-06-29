@@ -1,0 +1,8 @@
+# Table 3 / Table 4 T=11: DUALQUANTA default (CMOS integration T=11)
+# i2-2kfps PSNR 33.64 dB, SSIM 0.909, LPIPS 0.193
+# Requires: stage1_ckpt = checkpoints/table3_4_DUALQUANTA/stage1_mono_dcn_h8.pth
+# Train: python train_color.py --ablation 3 --stage1_ckpt <stage1> --ckpt_dir runs/DUALQUANTA_T11
+_base: base.yaml
+model:
+  ablation: 3
+  T: 11
