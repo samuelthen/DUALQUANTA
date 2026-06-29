@@ -1,0 +1,5 @@
+# Table 1: SpyNet + DCN
+# 4.67M params, 34.4 GFLOPs — i2-2kfps 37.14 dB / X4K 36.84 dB
+_base: base.yaml
+model:
+  mode: spynet_dcn

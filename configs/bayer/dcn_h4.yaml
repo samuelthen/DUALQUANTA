@@ -1,0 +1,6 @@
+# Table 2: Bayer color-SPAD, DCN at H/4
+# i2-2kfps 33.69 dB, SSIM 0.868, LPIPS 0.240
+_base: base.yaml
+model:
+  mode: dcn_h4
+  grad_loss: true

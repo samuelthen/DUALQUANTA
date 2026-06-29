@@ -1,0 +1,6 @@
+# Table 4: DUALQUANTA, CMOS integration window T=5
+# i2-2kfps PSNR 34.07 dB, SSIM 0.909, LPIPS 0.190
+_base: base.yaml
+model:
+  ablation: 3
+  T: 5

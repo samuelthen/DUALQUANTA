@@ -1,0 +1,5 @@
+# Table 1: Cascading DCN
+# 5.53M params, 44.2 GFLOPs — i2-2kfps 37.34 dB / X4K 37.03 dB
+_base: base.yaml
+model:
+  mode: cascading_dcn

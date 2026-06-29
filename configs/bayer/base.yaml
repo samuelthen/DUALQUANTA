@@ -1,0 +1,32 @@
+# Table 2: Bayer color-SPAD depth-sweep — shared defaults
+# Matches paper: T=11, B=7, 3.25 PPP/frame, RGGB Bayer measurement
+model:
+  T: 11
+  base_channels: 32
+  n_blocks: 2
+  n_fpm: 2
+  mode: dcn_h8
+  grad_loss: true
+  raft_ckpt: ""
+  input_mode: bayer_rggb
+
+data:
+  ppp: 3.25
+  bins: 7
+  crop: 256
+  eval_crop: 256
+  sps: 1
+  eval_frac: 0.1
+  seed: 42
+  workers: 4
+
+train:
+  epochs: 100
+  steps_per_epoch: 2000
+  batch: 4
+  lr: 2.0e-4
+  weight_decay: 1.0e-4
+  betas: [0.9, 0.9]
+  lr_min: 1.0e-6
+  save_every: 5
+  wandb_project: "spad-net-pub"

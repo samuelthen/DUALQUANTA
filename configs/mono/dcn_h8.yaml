@@ -1,0 +1,6 @@
+# Table 1: DCN at H/8 — paper default model
+# 5.15M params, 22.4 GFLOPs — i2-2kfps 37.14 dB / X4K 36.89 dB
+# Also used as DUALQUANTA Stage 1 (see configs/color/)
+_base: base.yaml
+model:
+  mode: dcn_h8

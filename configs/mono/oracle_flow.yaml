@@ -1,0 +1,6 @@
+# Table 1: Clean-RGB RAFT + DCN (oracle upper bound)
+# 9.64M params — i2-2kfps 38.72 dB / X4K 39.13 dB
+_base: base.yaml
+model:
+  mode: oracle_flow
+  raft_ckpt: ""

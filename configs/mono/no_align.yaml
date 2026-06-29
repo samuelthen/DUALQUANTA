@@ -1,0 +1,5 @@
+# Table 1: No alignment
+# 4.29M params, 6.3 GFLOPs — i2-2kfps 36.53 dB / X4K 36.07 dB
+_base: base.yaml
+model:
+  mode: no_align

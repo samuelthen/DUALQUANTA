@@ -1,0 +1,6 @@
+# Table 1: DCN at H/4
+# 4.56M params, 19.8 GFLOPs — i2-2kfps 37.10 dB / X4K 36.63 dB
+_base: base.yaml
+model:
+  mode: dcn_h4
+  grad_loss: true

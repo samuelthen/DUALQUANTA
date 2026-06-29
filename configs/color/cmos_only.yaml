@@ -1,0 +1,6 @@
+# Table 3: CMOS only baseline (ablation=1, no SPAD path)
+# i2-2kfps PSNR 25.79 dB, SSIM 0.767, LPIPS 0.437
+# Train: python train_color.py --ablation 1 --ckpt_dir runs/cmos_only
+_base: base.yaml
+model:
+  ablation: 1

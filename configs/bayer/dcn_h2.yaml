@@ -1,0 +1,5 @@
+# Table 2: Bayer color-SPAD, DCN at H/2
+# i2-2kfps 33.46 dB, SSIM 0.868, LPIPS 0.238
+_base: base.yaml
+model:
+  mode: dcn_h2

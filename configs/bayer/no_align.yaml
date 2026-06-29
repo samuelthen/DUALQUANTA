@@ -1,0 +1,5 @@
+# Table 2: Bayer color-SPAD, no alignment
+# i2-2kfps 33.15 dB, SSIM 0.861, LPIPS 0.249
+_base: base.yaml
+model:
+  mode: no_align

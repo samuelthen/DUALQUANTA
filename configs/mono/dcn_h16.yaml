@@ -1,0 +1,5 @@
+# Table 1: DCN at H/16
+# 7.28M params, 26.2 GFLOPs — i2-2kfps 36.54 dB / X4K 36.50 dB
+_base: base.yaml
+model:
+  mode: dcn_h16

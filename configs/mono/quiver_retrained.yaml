@@ -1,0 +1,5 @@
+# Table 1: QUIVER (Chennuri et al. 2024) retrained under paper protocol
+# 156.75M params, 5556 GFLOPs — i2-2kfps 30.68 dB / X4K 24.72 dB
+_base: base.yaml
+model:
+  mode: quiver

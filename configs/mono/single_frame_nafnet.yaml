@@ -1,0 +1,7 @@
+# Table 1: Single-frame NAFNet (T=1)
+# 4.28M params, 3.6 GFLOPs — i2-2kfps 35.28 dB / X4K zero-shot 35.17 dB
+_base: base.yaml
+model:
+  mode: single_frame
+  T: 1
+  grad_loss: true
