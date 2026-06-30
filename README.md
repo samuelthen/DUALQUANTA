@@ -43,7 +43,33 @@ Used for zero-shot evaluation at 2160×4096.  Download from the official X4K1000
 
 ## Checkpoints
 
-All 23 trained model checkpoints are included in this repository:
+All 23 trained model checkpoints are hosted on Hugging Face:
+**[samuelthen/DUALQUANTA](https://huggingface.co/samuelthen/DUALQUANTA)**
+
+### Download
+
+**Option A — entire checkpoint folder (recommended):**
+```python
+from huggingface_hub import snapshot_download
+snapshot_download(repo_id="samuelthen/DUALQUANTA",
+                  local_dir="checkpoints",
+                  ignore_patterns=["*.md", "*.gitattributes"])
+```
+
+**Option B — single file:**
+```python
+from huggingface_hub import hf_hub_download
+path = hf_hub_download(repo_id="samuelthen/DUALQUANTA",
+                       filename="checkpoints/table1_mono/dcn_h8.pth")
+```
+
+**Option C — CLI:**
+```bash
+huggingface-cli download samuelthen/DUALQUANTA --local-dir checkpoints \
+    --include "checkpoints/**"
+```
+
+### Layout
 
 ```
 checkpoints/
