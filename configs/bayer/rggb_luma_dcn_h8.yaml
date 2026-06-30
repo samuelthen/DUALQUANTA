@@ -1,0 +1,7 @@
+# Bayer-input SPADNet → luma, DCN at H/8 (RGGB sensor, luma output)
+# sensor_mode=rggb but target_mode=luma (out_ch=1); used as Bayer Stage-1 baseline
+_base: base.yaml
+model:
+  mode: dcn_h8
+  target_mode: luma
+  out_ch: 1

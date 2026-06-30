@@ -43,7 +43,7 @@ Used for zero-shot evaluation at 2160×4096.  Download from the official X4K1000
 
 ## Checkpoints
 
-All 22 trained model checkpoints are included in this repository:
+All 23 trained model checkpoints are included in this repository:
 
 ```
 checkpoints/
@@ -54,9 +54,10 @@ checkpoints/
     spynet_dcn.pth  /  cascading_dcn.pth  /  oracle_flow.pth
     quiver_retrained.pth
 
-  table2_bayer/                   # Table 2 — Bayer SPAD depth sweep (5 models)
+  table2_bayer/                   # Table 2 — Bayer SPAD depth sweep (6 models)
     no_align.pth
     dcn_h2.pth  /  dcn_h4.pth  /  dcn_h8.pth  /  dcn_h16.pth
+    rggb_luma_dcn_h8.pth          # Bayer-input → luma (Stage-1 luma baseline)
 
   table3_4_DUALQUANTA/            # Tables 3 & 4 — DUALQUANTA (8 files, 7 models)
     stage1_mono_dcn_h8.pth        # Stage-1 backbone (shared)
@@ -108,13 +109,23 @@ python evaluate.py \
     --sliding_window
 ```
 
-| Checkpoint | Alignment | Expected PSNR |
-|------------|-----------|---------------|
+| Checkpoint | Alignment | Expected PSNR (RGB) |
+|------------|-----------|---------------------|
 | `no_align.pth` | none | 33.15 |
 | `dcn_h2.pth` | DCN at H/2 | 33.46 |
 | `dcn_h4.pth` | DCN at H/4 | 33.69 |
 | `dcn_h8.pth` | DCN at H/8 | 33.72 |
 | `dcn_h16.pth` | DCN at H/16 | 33.36 |
+
+**Bayer-input luma baseline** (`rggb_luma_dcn_h8.pth`) — RGGB SPAD input with luma output (`out_ch=1`, `target=luma`).  Evaluated with luma PSNR (same metric as Table 1):
+
+```bash
+python evaluate.py \
+    --ckpt        checkpoints/table2_bayer/rggb_luma_dcn_h8.pth \
+    --test_root   /path/to/i2-2kfps_v1_png/test \
+    --sensor_mode rggb \
+    --sliding_window
+```
 
 ### Tables 3 & 4 — DUALQUANTA (RGB PSNR)
 
@@ -158,7 +169,7 @@ python eval_x4k_color.py \
 
 ### Smoke Test
 
-A fast sanity check (first window per scene, ~2 min per model) that verifies all 22 checkpoints load and produce PSNR in the expected ballpark:
+A fast sanity check (first window per scene, ~2 min per model) that verifies all 23 checkpoints load and produce PSNR in the expected ballpark:
 
 ```bash
 python smoke_test.py --device cuda:0 --data_root /path/to/i2-2kfps_v1_png
@@ -177,11 +188,17 @@ python train.py \
     --data_root /path/to/i2-2kfps_v1_png \
     --ckpt_dir  runs/dcn_h8
 
-# Bayer variant (Table 2)
+# Bayer RGGB→RGB variant (Table 2, DCN at H/8)
 python train.py \
     --config  configs/bayer/dcn_h8.yaml \
     --data_root /path/to/i2-2kfps_v1_png \
     --ckpt_dir  runs/bayer_dcn_h8
+
+# Bayer RGGB→luma variant (supplemental Stage-1 baseline)
+python train.py \
+    --config  configs/bayer/rggb_luma_dcn_h8.yaml \
+    --data_root /path/to/i2-2kfps_v1_png \
+    --ckpt_dir  runs/rggb_luma_dcn_h8
 ```
 
 All config files are in `configs/mono/` and `configs/bayer/`.  CLI flags override YAML values.

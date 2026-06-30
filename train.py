@@ -139,7 +139,7 @@ def make_loader(ds, batch_size, shuffle, num_workers, drop_last=False):
 # ── training epoch ─────────────────────────────────────────────────────────────
 
 def train_epoch(model, loader, opt, scaler, criterion, use_grad_loss,
-                device, epoch, max_steps=0, wandb_on=False, gstep=0):
+                device, epoch, out_ch=1, max_steps=0, wandb_on=False, gstep=0):
     model.train()
     total, n = 0., 0
     needs_rgb = (model.mode == "oracle_flow")
@@ -149,7 +149,10 @@ def train_epoch(model, loader, opt, scaler, criterion, use_grad_loss,
 
     for batch in pbar:
         spad = batch["spad_mono_seq"].to(device)
-        gt_s = batch["target_s"].unsqueeze(1).to(device)   # (B,1,H,W) alpha*S
+        if out_ch == 1:
+            gt_s = batch["target_s"].unsqueeze(1).to(device)   # (B,1,H,W) alpha*S
+        else:
+            gt_s = batch["target_rgb_s"].to(device)             # (B,3,H,W) alpha*(R,G,B)
         rgb  = batch["clean_rgb_seq"].to(device) if needs_rgb else None
 
         opt.zero_grad(set_to_none=True)
@@ -208,7 +211,7 @@ def train_epoch(model, loader, opt, scaler, criterion, use_grad_loss,
 # ── evaluation ────────────────────────────────────────────────────────────────
 
 @torch.no_grad()
-def run_eval(model, loader, device, max_batches=0):
+def run_eval(model, loader, device, max_batches=0, out_ch=1):
     model.eval()
     plin_all, pgam_all, sgam_all = [], [], []
     needs_rgb = (model.mode == "oracle_flow")
@@ -216,7 +219,10 @@ def run_eval(model, loader, device, max_batches=0):
     for bi, batch in enumerate(tqdm(loader, desc="eval", leave=False,
                                     disable=not _TTY)):
         spad  = batch["spad_mono_seq"].to(device)
-        gt_s  = batch["target_s"].unsqueeze(1).to(device)
+        if out_ch == 1:
+            gt_s = batch["target_s"].unsqueeze(1).to(device)
+        else:
+            gt_s = batch["target_rgb_s"].to(device)
         pct99 = batch["pct99"].to(device)
         rgb   = batch["clean_rgb_seq"].to(device) if needs_rgb else None
 
@@ -271,6 +277,9 @@ def main():
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     mode         = mc.get("mode", "dcn_h4")
+    sensor_mode  = mc.get("sensor_mode", "mono")   # "mono" or "rggb"
+    target_mode  = mc.get("target_mode", "luma")   # "luma" or "rgb"
+    out_ch       = mc.get("out_ch", 1 if target_mode == "luma" else 3)
     use_grad_loss = mc.get("grad_loss", True)
     epochs        = tc.get("epochs", 100)
     steps_per_ep  = tc.get("steps_per_epoch", 2000)
@@ -306,6 +315,8 @@ def main():
         nfpm=mc.get("n_fpm", 2),
         mode=mode,
         raft_ckpt=mc.get("raft_ckpt", ""),
+        out_ch=out_ch,
+        target_mode=target_mode,
     ).to(device)
 
     n_tr = sum(p.numel() for p in model.parameters() if p.requires_grad) / 1e6
@@ -336,7 +347,8 @@ def main():
             samples, ppp=ppp, bins=bins,
             augment=aug, crop=crop,
             eval_crop=(eval_crop if ec is None else ec),
-            seed=seed, random_pick=rp, sps=sps_eff)
+            seed=seed, random_pick=rp, sps=sps_eff,
+            sensor_mode=sensor_mode, target_mode=target_mode)
 
     if args.eval_only:
         from src import build_test
@@ -346,7 +358,7 @@ def main():
         sps_eff = 1
         res = run_eval(model,
                        make_loader(_ds(src, False, ec=eval_crop), 1, False, workers),
-                       device, args.eval_batches)
+                       device, args.eval_batches, out_ch)
         print_results(res, f"TEST | {mode}")
         if use_wb:
             wandb.log(res); wandb.finish()
@@ -392,12 +404,12 @@ def main():
         t0 = time.time()
         tloss, gstep = train_epoch(
             model, tr_ld, opt, scaler, criterion, use_grad_loss,
-            device, ep, steps, use_wb, gstep)
+            device, ep, out_ch, steps, use_wb, gstep)
         sched.step()
 
         pg = sg = float('nan')
         if ev_ld:
-            res = run_eval(model, ev_ld, device, args.eval_batches)
+            res = run_eval(model, ev_ld, device, args.eval_batches, out_ch)
             pg, sg = res["psnr_gam"], res["ssim_gam"]
 
         lr_now = opt.param_groups[0]["lr"]
@@ -418,6 +430,7 @@ def main():
         state = dict(epoch=ep, gstep=gstep, model=model.state_dict(),
                      optimizer=opt.state_dict(), scheduler=sched.state_dict(),
                      best_psnr_gam=best, mode=mode,
+                     sensor_mode=sensor_mode, target_mode=target_mode, out_ch=out_ch,
                      use_grad_loss=use_grad_loss)
 
         save_checkpoint(state, os.path.join(args.ckpt_dir, "latest.pth"))

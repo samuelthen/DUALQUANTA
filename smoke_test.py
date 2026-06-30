@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-smoke_test.py — Verify all 22 paper checkpoints reproduce published PSNR.
+smoke_test.py — Verify all 23 paper checkpoints reproduce published PSNR.
 
 Uses the first sliding window of every test scene (31 samples per model).
 Fast enough to run in minutes; representative enough to catch broken checkpoints.
@@ -71,7 +71,7 @@ VARIANTS = [
     ("Table1 / quiver_retrained",
      "checkpoints/table1_mono/quiver_retrained.pth",    30.68, "mono", {}),
 
-    # Table 2 — Bayer color-SPAD depth sweep
+    # Table 2 — Bayer color-SPAD depth sweep (RGGB→RGB)
     ("Table2 / bayer_no_align",
      "checkpoints/table2_bayer/no_align.pth",  33.15, "bayer", {}),
     ("Table2 / bayer_dcn_h2",
@@ -82,6 +82,9 @@ VARIANTS = [
      "checkpoints/table2_bayer/dcn_h8.pth",    33.72, "bayer", {}),
     ("Table2 / bayer_dcn_h16",
      "checkpoints/table2_bayer/dcn_h16.pth",   33.36, "bayer", {}),
+    # Bayer Stage-1 luma baseline (RGGB→luma, out_ch=1; luma PSNR metric)
+    ("Table2 / rggb_luma_h8",
+     "checkpoints/table2_bayer/rggb_luma_dcn_h8.pth", 35.52, "bayer", {}),
 
     # Table 3 — sensing comparison (RGB PSNR)
     ("Table3 / cmos_only",

@@ -8,7 +8,9 @@ model:
   mode: dcn_h8
   grad_loss: true
   raft_ckpt: ""
-  input_mode: bayer_rggb
+  sensor_mode: rggb
+  target_mode: rgb
+  out_ch: 3
 
 data:
   ppp: 3.25
