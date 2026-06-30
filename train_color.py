@@ -634,7 +634,7 @@ def main():
     lr_min       = tc.get("lr_min", 1e-6)
     save_every   = tc.get("save_every", 5)
     eval_batches = tc.get("eval_batches", 25)
-    wandb_project = tc.get("wandb_project", "spad-net-color")
+    wandb_project = tc.get("wandb_project", "DUALQUANTA")
     workers      = dc.get("workers", 4)
     ppp          = dc.get("ppp", PPP)
     bins         = dc.get("bins", BINS)

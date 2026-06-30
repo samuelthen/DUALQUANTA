@@ -1,21 +1,28 @@
 #!/usr/bin/env python3
-"""X4K evaluation for color ablation models A1/A2/A3.
+"""X4K zero-shot evaluation for a DUALQUANTA colour model.
 
-4096x2160 frames are processed via 1024x1024 tiles with midpoint-boundary stitching.
-Scene-level alpha and pct99 are computed from the full frame (not per tile).
-Metrics (PSNR/SSIM/LPIPS) are computed on the full stitched sRGB canvas.
+4096×2160 frames are processed via 1024×1024 tiles with midpoint-boundary
+stitching.  Scene-level alpha and pct99 are computed from the full frame
+(not per tile).  Metrics (PSNR / SSIM / LPIPS) are computed on the full
+stitched sRGB canvas.
+
+Usage:
+    python eval_x4k_color.py \
+        --ckpt   checkpoints/table3_4_DUALQUANTA/DUALQUANTA_T11_stage2.pth \
+        --stage1 checkpoints/table3_4_DUALQUANTA/stage1_mono_dcn_h8.pth \
+        --test_root /path/to/X4K1000FPS/test
 """
-import csv, math, os, sys
+import argparse, csv, math, os, sys
 import cv2; cv2.setNumThreads(0)
 import numpy as np
 import torch
 from skimage.metrics import structural_similarity
 
-os.chdir('/home/samuel/spad-net-color')
-sys.path.insert(0, '/home/samuel/spad-net-color')
+REPO_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, REPO_DIR)
 
 from src.data.simulation import scene_stats, simulate_spad, simulate_cmos
-from train_color import ColorUNet, load_stage1, get_luma
+from train_color import ColorUNet, load_stage1, get_luma, GAMMA
 from src.utils import load_checkpoint
 import lpips as lpips_lib
 
@@ -24,32 +31,11 @@ HALF_WIN   = SEQ_LEN // 2
 PPP        = 3.25
 BINS       = 7
 CMOS_SIGMA = 2.0
-GAMMA      = 2.2
 TILE_SIZE  = 1024
-
-X4K_ROOT    = '/data/X4K1000FPS/test'
-STAGE1_CKPT = 'checkpoints/dcn_h8/best.pth'
-CKPTS = [
-    ('A1', 'runs/color_a1_i2k/best.pth'),
-    ('A2', 'runs/color_a2_i2k/best.pth'),
-    ('A3', 'runs/color_a3_i2k/best.pth'),
-]
-
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-
-def load_color_model(path):
-    ck   = load_checkpoint(path, device)
-    mode = ck.get('mode', ck.get('color_mode', 'cmos_only'))
-    bc   = ck.get('bc', 32)
-    m    = ColorUNet(mode=mode, bc=bc).to(device)
-    m.load_state_dict(ck['model'])
-    m.eval()
-    return m
 
 
 def make_tile_grid(H, W, ts):
-    """Returns list of tile descriptors for midpoint-boundary stitching."""
+    """Returns tile descriptors for midpoint-boundary stitching."""
     n_rows = math.ceil(H / ts)
     n_cols = math.ceil(W / ts)
     ys = (np.round(np.linspace(0, H - ts, n_rows)).astype(int) & ~1).tolist()
@@ -65,19 +51,18 @@ def make_tile_grid(H, W, ts):
         for ci, x0 in enumerate(xs):
             cy0, cy1 = y_bounds[ri], y_bounds[ri + 1]
             cx0, cx1 = x_bounds[ci], x_bounds[ci + 1]
-            # (tile_origin_y, tile_origin_x, canvas_dst, tile_src)
             tiles.append((y0, x0, cy0, cy1, cx0, cx1,
                           cy0 - y0, cy1 - y0, cx0 - x0, cx1 - x0))
     return tiles
 
 
 def load_frames(scene_dir):
-    pngs = sorted(f for f in os.listdir(scene_dir) if f.endswith('.png'))
+    pngs = sorted(f for f in os.listdir(scene_dir) if f.endswith(".png"))
     frames = []
     for f in pngs:
         img = cv2.imread(os.path.join(scene_dir, f), cv2.IMREAD_COLOR)
         frames.append(cv2.cvtColor(img, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.)
-    return np.stack(frames, 0)   # (T, H, W, 3)
+    return np.stack(frames, 0)
 
 
 def compute_psnr(a, b):
@@ -85,128 +70,139 @@ def compute_psnr(a, b):
     return 100.0 if mse == 0 else 10 * math.log10(1.0 / mse)
 
 
-def compute_ssim(a_hwc, b_hwc):
-    return float(structural_similarity(a_hwc, b_hwc, data_range=1.0, channel_axis=2))
+def compute_ssim(a, b):
+    return float(structural_similarity(a, b, data_range=1.0, channel_axis=2))
 
 
-def compute_lpips(a_hwc, b_hwc, lpips_fn):
+def compute_lpips(a, b, lpips_fn, device):
     def _t(x):
-        return torch.from_numpy(x).permute(2, 0, 1).unsqueeze(0).float().to(device) * 2 - 1
+        return torch.from_numpy(x).permute(2,0,1).unsqueeze(0).float().to(device) * 2 - 1
     with torch.no_grad():
-        return float(lpips_fn(_t(a_hwc), _t(b_hwc)).item())
+        return float(lpips_fn(_t(a), _t(b)).item())
 
 
-# ── Load models ───────────────────────────────────────────────────────────────
+def main():
+    ap = argparse.ArgumentParser(
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    ap.add_argument("--ckpt",      required=True,
+                    help="Stage-2 checkpoint")
+    ap.add_argument("--stage1",    required=True,
+                    help="Stage-1 SPADNet checkpoint (stage1_mono_dcn_h8.pth)")
+    ap.add_argument("--test_root", required=True,
+                    help="Path to X4K1000FPS test directory")
+    ap.add_argument("--cmos_t",    type=int,   default=11,
+                    help="CMOS integration window length")
+    ap.add_argument("--out",       default="",
+                    help="Output CSV path (default: <ckpt_dir>/eval_x4k.csv)")
+    ap.add_argument("--device",    default="cuda:0")
+    args = ap.parse_args()
 
-print('Loading models...')
-models = {}
-for tag, path in CKPTS:
-    models[tag] = load_color_model(path)
-    ep = torch.load(path, map_location='cpu', weights_only=True).get('epoch', '?')
-    print(f'  {tag}: epoch={ep}  mode={models[tag].mode}')
+    device = torch.device(args.device)
 
-stage1   = load_stage1(STAGE1_CKPT, device)
-lpips_fn = lpips_lib.LPIPS(net='alex').to(device).eval()
+    ck   = load_checkpoint(args.ckpt, device)
+    mode = ck.get("mode", "cmos_luma_softmax")
+    ep   = ck.get("epoch", "?")
+    model = ColorUNet(mode=mode, bc=ck.get("bc", 32)).to(device)
+    model.load_state_dict(ck["model"])
+    model.eval()
 
-# ── Test scenes ───────────────────────────────────────────────────────────────
+    stage1   = load_stage1(args.stage1, device)
+    lpips_fn = lpips_lib.LPIPS(net="alex").to(device).eval()
 
-scenes = sorted(d for d in os.listdir(X4K_ROOT)
-                if os.path.isdir(os.path.join(X4K_ROOT, d)))
-print(f'\n{len(scenes)} X4K test scenes | device={device}\n')
+    out_path = args.out or os.path.join(
+        os.path.dirname(args.ckpt),
+        f"eval_x4k_ep{ep}.csv")
 
-all_results = {tag: [] for tag in models}
+    print(f"Model : {args.ckpt}  ep={ep}  mode={mode}  cmos_t={args.cmos_t}")
+    print(f"Stage1: {args.stage1}")
+    print(f"Output: {out_path}\n")
 
-for si, scene_name in enumerate(scenes):
-    scene_dir = os.path.join(X4K_ROOT, scene_name)
-    frames    = load_frames(scene_dir)
-    T, H, W, _ = frames.shape
-    tiles     = make_tile_grid(H, W, TILE_SIZE)
-    windows   = [frames[s:s + SEQ_LEN] for s in range(T - SEQ_LEN + 1)]
-    n_win     = len(windows)
+    scenes = sorted(d for d in os.listdir(args.test_root)
+                    if os.path.isdir(os.path.join(args.test_root, d)))
+    print(f"{len(scenes)} X4K test scenes | device={device}\n")
 
-    print(f'[{si+1:2d}/{len(scenes)}] {scene_name}  '
-          f'T={T}  {H}x{W}  {len(tiles)} tiles  {n_win} windows')
+    all_results = []
+    scene_psnr, scene_ssim, scene_lpips = [], [], []
 
-    scene_acc = {tag: {'psnr': [], 'ssim': [], 'lpips': []} for tag in models}
+    for si, scene_name in enumerate(scenes):
+        scene_dir = os.path.join(args.test_root, scene_name)
+        frames    = load_frames(scene_dir)
+        T, H, W, _ = frames.shape
+        tiles     = make_tile_grid(H, W, TILE_SIZE)
+        windows   = list(range(T - SEQ_LEN + 1))
 
-    for wi, seq_win in enumerate(windows):
-        # Global scene stats from full-resolution 11-frame window
-        x_lin_full, alpha, pct99 = scene_stats(seq_win, PPP, HALF_WIN)
-        gt_srgb = seq_win[HALF_WIN]   # (H, W, 3) sRGB [0,1]
+        print(f"[{si+1:2d}/{len(scenes)}] {scene_name}  "
+              f"T={T}  {H}×{W}  {len(tiles)} tiles  {len(windows)} win")
 
-        # Stitch canvas in alpha*linear space (3-channel RGB)
-        pred_canvas = {tag: np.zeros((3, H, W), np.float32) for tag in models}
+        win_psnr, win_ssim, win_lpips = [], [], []
 
-        for (y0, x0, cy0, cy1, cx0, cx1, ty0, ty1, tx0, tx1) in tiles:
-            x_lin_tile = x_lin_full[:, y0:y0 + TILE_SIZE, x0:x0 + TILE_SIZE, :]
+        for w in windows:
+            seq_win = frames[w:w + SEQ_LEN]
+            x_lin_full, alpha, pct99 = scene_stats(seq_win, PPP, HALF_WIN)
+            gt_srgb = seq_win[HALF_WIN]
 
-            spad_sim = simulate_spad(x_lin_tile, alpha, BINS, HALF_WIN, pct99)
-            cmos_sim = simulate_cmos(x_lin_tile, alpha, CMOS_SIGMA)
+            pred_canvas = np.zeros((3, H, W), np.float32)
 
-            spad = torch.from_numpy(spad_sim['spad_mono_seq']).unsqueeze(0).to(device)
-            cmos = torch.from_numpy(cmos_sim['cmos_packed']).unsqueeze(0).to(device)
-            batch = {
-                'spad_mono_seq': spad,
-                'target_s': torch.from_numpy(spad_sim['target_s']).unsqueeze(0).to(device),
-            }
+            for (y0, x0, cy0, cy1, cx0, cx1, ty0, ty1, tx0, tx1) in tiles:
+                x_lin_tile = x_lin_full[:, y0:y0+TILE_SIZE, x0:x0+TILE_SIZE, :]
 
-            with torch.no_grad():
-                for tag, model in models.items():
-                    luma = get_luma(batch, stage1, device) if model.mode != 'cmos_only' else None
-                    pred_tile = model(cmos, luma)[0].float().cpu().numpy()  # (3, ts, ts)
-                    pred_canvas[tag][:, cy0:cy1, cx0:cx1] = pred_tile[:, ty0:ty1, tx0:tx1]
+                spad_sim = simulate_spad(x_lin_tile, alpha, BINS, HALF_WIN, pct99,
+                                         sensor_mode="mono")
+                cmos_sim = simulate_cmos(x_lin_tile, alpha, CMOS_SIGMA,
+                                         cmos_t=args.cmos_t)
 
-        # Convert to sRGB and compute metrics on full stitched 4K canvas
-        for tag in models:
-            pred_srgb = (torch.from_numpy(pred_canvas[tag]).float()
-                         / max(float(alpha), 1e-8)).clamp(0, 1).pow(1.0 / GAMMA)
-            pred_srgb = pred_srgb.permute(1, 2, 0).numpy()   # (H, W, 3)
+                spad_t  = torch.from_numpy(spad_sim["spad_mono_seq"]).unsqueeze(0).to(device)
+                cmos_in = torch.from_numpy(cmos_sim["cmos_packed"]).unsqueeze(0).to(device)
+                batch   = {"spad_mono_seq": spad_t,
+                           "target_s": torch.from_numpy(spad_sim["target_s"]).unsqueeze(0).to(device)}
+
+                with torch.no_grad():
+                    luma = get_luma(batch, stage1, device) if mode != "cmos_only" else None
+                    pred_tile = model(cmos_in, luma)[0].float().cpu().numpy()
+
+                pred_canvas[:, cy0:cy1, cx0:cx1] = pred_tile[:, ty0:ty1, tx0:tx1]
+
+            a = max(float(alpha), 1e-8)
+            pred_srgb = (torch.from_numpy(pred_canvas).float() / a
+                         ).clamp(0, 1).pow(1. / GAMMA).permute(1, 2, 0).numpy()
 
             p = compute_psnr(pred_srgb, gt_srgb)
             s = compute_ssim(pred_srgb, gt_srgb)
-            l = compute_lpips(pred_srgb, gt_srgb, lpips_fn)
-            scene_acc[tag]['psnr'].append(p)
-            scene_acc[tag]['ssim'].append(s)
-            scene_acc[tag]['lpips'].append(l)
+            l = compute_lpips(pred_srgb, gt_srgb, lpips_fn, device)
+            win_psnr.append(p)
+            win_ssim.append(s)
+            win_lpips.append(l)
 
-        if (wi + 1) % 5 == 0 or wi == n_win - 1:
-            print(f'  win {wi+1}/{n_win}  '
-                  + '  '.join(f'{t}: {np.mean(scene_acc[t]["psnr"]):.2f}dB'
-                               for t in models))
-            sys.stdout.flush()
+            if (w + 1) % 5 == 0 or w == windows[-1]:
+                print(f"  win {w+1}/{len(windows)}  "
+                      f"PSNR={np.mean(win_psnr):.2f}")
+                sys.stdout.flush()
 
-    for tag in models:
-        mp = float(np.mean(scene_acc[tag]['psnr']))
-        ms = float(np.mean(scene_acc[tag]['ssim']))
-        ml = float(np.mean(scene_acc[tag]['lpips']))
-        print(f'    {tag}: PSNR={mp:.3f}  SSIM={ms:.4f}  LPIPS={ml:.4f}')
-        all_results[tag].append({'scene': scene_name, 'psnr': mp, 'ssim': ms, 'lpips': ml})
-    sys.stdout.flush()
+        sp = float(np.mean(win_psnr))
+        ss = float(np.mean(win_ssim))
+        sl = float(np.mean(win_lpips))
+        scene_psnr.append(sp)
+        scene_ssim.append(ss)
+        scene_lpips.append(sl)
+        print(f"  scene mean: PSNR={sp:.3f}  SSIM={ss:.4f}  LPIPS={sl:.4f}")
+        all_results.append({"scene": scene_name, "psnr": sp, "ssim": ss, "lpips": sl})
+        sys.stdout.flush()
 
-# ── Aggregate ─────────────────────────────────────────────────────────────────
+    mean_p = float(np.mean(scene_psnr))
+    mean_s = float(np.mean(scene_ssim))
+    mean_l = float(np.mean(scene_lpips))
+    print(f"\n{'='*60}")
+    print(f"X4K MEAN over {len(scenes)} scenes — {TILE_SIZE}px tiles")
+    print(f"PSNR={mean_p:.4f}  SSIM={mean_s:.4f}  LPIPS={mean_l:.4f}")
+    print(f"{'='*60}")
 
-print('\n' + '='*68)
-print(f'  X4K MEAN over {len(scenes)} scenes — {TILE_SIZE}px tiles, sliding window')
-print(f'  {"Model":<6}  {"mode":<22}  {"PSNR":>8}  {"SSIM":>8}  {"LPIPS":>8}')
-print(f'  {"-"*58}')
-for tag, model in models.items():
-    ps = [r['psnr']  for r in all_results[tag]]
-    ss = [r['ssim']  for r in all_results[tag]]
-    ls = [r['lpips'] for r in all_results[tag]]
-    print(f'  {tag:<6}  {model.mode:<22}  '
-          f'{np.mean(ps):>8.4f}  {np.mean(ss):>8.4f}  {np.mean(ls):>8.4f}')
-print('='*68)
-
-# ── Save CSVs ─────────────────────────────────────────────────────────────────
-
-for tag in models:
-    csv_path = f'runs/color_{tag.lower()}_i2k/eval_x4k.csv'
-    with open(csv_path, 'w', newline='') as f:
-        w = csv.DictWriter(f, fieldnames=['scene', 'psnr', 'ssim', 'lpips'])
+    with open(out_path, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=["scene", "psnr", "ssim", "lpips"])
         w.writeheader()
-        w.writerows(all_results[tag])
-        agg = {k: float(np.mean([r[k] for r in all_results[tag]]))
-               for k in ['psnr', 'ssim', 'lpips']}
-        agg['scene'] = 'MEAN'
-        w.writerow(agg)
-    print(f'  Saved {csv_path}')
+        w.writerows(all_results)
+        w.writerow({"scene": "MEAN", "psnr": mean_p, "ssim": mean_s, "lpips": mean_l})
+    print(f"Saved → {out_path}")
+
+
+if __name__ == "__main__":
+    main()

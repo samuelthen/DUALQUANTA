@@ -26,4 +26,4 @@ train:
   betas: [0.9, 0.9]
   lr_min: 1.0e-6
   save_every: 5
-  wandb_project: "spad-net-pub"
+  wandb_project: "DUALQUANTA"
