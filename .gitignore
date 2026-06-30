@@ -11,4 +11,4 @@ logs/
 *.log
 .DS_Store
 *.swp
-# checkpoints/  <-- intentionally NOT ignored; all best.pth files are tracked
+checkpoints/
