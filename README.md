@@ -117,7 +117,7 @@ python evaluate.py \
 | `dcn_h8.pth` | DCN at H/8 | 33.72 |
 | `dcn_h16.pth` | DCN at H/16 | 33.36 |
 
-**Bayer-input luma baseline** (`rggb_luma_dcn_h8.pth`) — RGGB SPAD input with luma output (`out_ch=1`, `target=luma`).  Evaluated with luma PSNR (same metric as Table 1):
+**Bayer-input luma baseline** (`rggb_luma_dcn_h8.pth`, 35.38 dB / SSIM 0.896) — RGGB SPAD input with luma output (`out_ch=1`, `target=luma`).  Evaluated with luma PSNR (same metric as Table 1):
 
 ```bash
 python evaluate.py \

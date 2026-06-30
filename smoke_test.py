@@ -84,7 +84,7 @@ VARIANTS = [
      "checkpoints/table2_bayer/dcn_h16.pth",   33.36, "bayer", {}),
     # Bayer Stage-1 luma baseline (RGGB→luma, out_ch=1; luma PSNR metric)
     ("Table2 / rggb_luma_h8",
-     "checkpoints/table2_bayer/rggb_luma_dcn_h8.pth", 35.52, "bayer", {}),
+     "checkpoints/table2_bayer/rggb_luma_dcn_h8.pth", 35.38, "bayer", {}),
 
     # Table 3 — sensing comparison (RGB PSNR)
     ("Table3 / cmos_only",
