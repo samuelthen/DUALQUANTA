@@ -96,22 +96,25 @@ Replace `dcn_h8.pth` with any checkpoint from `checkpoints/table1_mono/`:
 | `oracle_flow.pth` | 38.72 |
 | `quiver_retrained.pth` | 30.68 |
 
-### Table 2 — Bayer SPAD (luma PSNR)
+### Table 2 — Bayer SPAD → RGB
+
+These models take a Bayer (RGGB) SPAD quanta sequence as input and reconstruct a full-colour RGB image (`out_ch=3`, `sensor=rggb`, `target=rgb`).  Alignment depth is the same sweep as Table 1 but with Bayer sensor input.
 
 ```bash
 python evaluate.py \
-    --ckpt  checkpoints/table2_bayer/dcn_h8.pth \
-    --test_root /path/to/i2-2kfps_v1_png/test \
+    --ckpt        checkpoints/table2_bayer/dcn_h8.pth \
+    --test_root   /path/to/i2-2kfps_v1_png/test \
+    --sensor_mode rggb \
     --sliding_window
 ```
 
-| Checkpoint | Expected PSNR |
-|------------|---------------|
-| `no_align.pth` | 33.15 |
-| `dcn_h2.pth` | 33.46 |
-| `dcn_h4.pth` | 33.69 |
-| `dcn_h8.pth` | 33.72 |
-| `dcn_h16.pth` | 33.36 |
+| Checkpoint | Alignment | Expected PSNR |
+|------------|-----------|---------------|
+| `no_align.pth` | none | 33.15 |
+| `dcn_h2.pth` | DCN at H/2 | 33.46 |
+| `dcn_h4.pth` | DCN at H/4 | 33.69 |
+| `dcn_h8.pth` | DCN at H/8 | 33.72 |
+| `dcn_h16.pth` | DCN at H/16 | 33.36 |
 
 ### Tables 3 & 4 — DUALQUANTA (RGB PSNR)
 
