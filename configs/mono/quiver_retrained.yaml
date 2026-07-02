@@ -1,5 +1,14 @@
 # Table 1: QUIVER (Chennuri et al. 2024) retrained under paper protocol
 # 156.75M params, 5556 GFLOPs — i2-2kfps 30.68 dB / X4K 24.72 dB
+# crop halved vs base.yaml (256->128): QUIVER is ~30x heavier than SPADNet
+# (5556 vs ~20-44 GFLOPs) and OOMs at the default training crop once
+# gradients + AdamW state are added. Matches the original QUIVER repo's own
+# eval scripts (run_quiver_sim_spad.py/run_quiver_batch_metrics.py), which
+# default to --resize 256 against this project's 512-native frames -- same
+# halving ratio. Eval-only (inference, no grad) is unaffected and runs fine
+# at full native resolution (verified: evaluate.py reproduces ~30.68dB).
 _base: base.yaml
 model:
   mode: quiver
+data:
+  crop: 128

@@ -106,8 +106,11 @@ _QUIVER_N_BLOCKS   = 12
 
 
 def _is_quiver_ckpt(ck):
+    # NOTE: "predenoise." is QUIVER-exclusive. Do NOT also match "spynet." —
+    # SPADNet's own spynet_dcn mode has a `self.spynet` submodule too, which
+    # previously false-positived spynet_dcn.pth into the QUIVER loader.
     state = ck.get("model", {})
-    return any(k.startswith("predenoise.") or k.startswith("spynet.") for k in state)
+    return any(k.startswith("predenoise.") for k in state)
 
 
 def load_quiver_model(ckpt_path, device):
@@ -134,22 +137,38 @@ def load_quiver_model(ckpt_path, device):
     return model, "quiver", "mono"
 
 
+def _config_for_ckpt(ckpt_path):
+    """Bare checkpoints (table1_mono/*.pth) carry no 'mode'/'args' metadata —
+    they're paired 1:1 with configs/mono/<same-name>.yaml. Returns that
+    config's `model` section, or {} if no matching config exists."""
+    stem = os.path.splitext(os.path.basename(ckpt_path))[0]
+    cfg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            "configs", "mono", f"{stem}.yaml")
+    if not os.path.isfile(cfg_path):
+        return {}
+    from src.utils import load_config
+    return load_config(cfg_path).get("model", {})
+
+
 def load_model(ckpt_path, device):
     ck = load_checkpoint(ckpt_path, device)
     if _is_quiver_ckpt(ck):
         return load_quiver_model(ckpt_path, device)
     args_saved = ck.get("args", {})
-    # Support both new (top-level "mode") and old (args["mode"]) checkpoint formats
-    raw_mode    = ck.get("mode") or args_saved.get("mode", "dcn_h4")
+    cfg_model  = {} if (ck.get("mode") or args_saved) else _config_for_ckpt(ckpt_path)
+    # Support new (top-level "mode"), old (args["mode"]), and bare-checkpoint
+    # (configs/mono/<name>.yaml) formats, in that priority order.
+    raw_mode    = ck.get("mode") or args_saved.get("mode") or cfg_model.get("mode", "dcn_h4")
     mode        = _OLD_MODE_MAP.get(raw_mode, raw_mode)
-    bc          = args_saved.get("base_c",    32)
-    nb          = args_saved.get("n_blocks",   2)
-    nfpm        = args_saved.get("n_fpm",      2)
-    raft        = args_saved.get("raft_ckpt", "")
+    bc          = args_saved.get("base_c",    cfg_model.get("base_channels", 32))
+    nb          = args_saved.get("n_blocks",  cfg_model.get("n_blocks",      2))
+    nfpm        = args_saved.get("n_fpm",     cfg_model.get("n_fpm",         2))
+    raft        = args_saved.get("raft_ckpt", cfg_model.get("raft_ckpt",    ""))
     out_ch      = ck.get("out_ch",      args_saved.get("out_ch", 1 if args_saved.get("target_mode", "luma") == "luma" else 3))
     target_mode = ck.get("target_mode", args_saved.get("target_mode", "luma"))
     sensor_mode = ck.get("sensor_mode", args_saved.get("sensor_mode", "mono"))
-    model = SPADNet(T=SEQ_LEN, bc=bc, nb=nb, nfpm=nfpm, mode=mode, raft_ckpt=raft,
+    T           = args_saved.get("T", cfg_model.get("T", SEQ_LEN))
+    model = SPADNet(T=T, bc=bc, nb=nb, nfpm=nfpm, mode=mode, raft_ckpt=raft,
                     out_ch=out_ch, target_mode=target_mode)
     model.load_state_dict(ck["model"], strict=True)
     model.to(device).eval()
