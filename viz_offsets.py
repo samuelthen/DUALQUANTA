@@ -390,6 +390,17 @@ for bi, batch in enumerate(tqdm(loader, desc='Viz+Offsets')):
     cv2.imwrite(os.path.join(scene_dir, 'direction_legend.png'),
                 cv2.cvtColor(legend_img, cv2.COLOR_RGB2BGR))
 
+    # ── Reconstructed image + noisy input, alongside the offset diagrams ─────
+    for stem, short in RUNS:
+        if stem not in preds_np:
+            continue
+        cv2.imwrite(os.path.join(scene_dir, f'{short}_recon.png'),
+                    cv2.cvtColor(u8(preds_np[stem]), cv2.COLOR_RGB2BGR))
+    cv2.imwrite(os.path.join(scene_dir, 'noisy_input.png'),
+                cv2.cvtColor(u8(spad_c), cv2.COLOR_RGB2BGR))
+    cv2.imwrite(os.path.join(scene_dir, 'gt.png'),
+                cv2.cvtColor(u8(gt_np), cv2.COLOR_RGB2BGR))
+
     # ── Combined panel ────────────────────────────────────────────────────────
     row1 = hstack(
         [label_img(u8(spad_c), 'SPAD')]

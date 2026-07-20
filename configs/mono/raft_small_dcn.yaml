@@ -1,0 +1,5 @@
+# RAFT-small + flow-guided DCN, end-to-end training (analogue of spynet_dcn)
+# PreDenoiser → RAFT-small (4 GRU iters, trained from scratch) → FlowGuidedDCNAlign at H/2
+_base: base.yaml
+model:
+  mode: raft_small_dcn

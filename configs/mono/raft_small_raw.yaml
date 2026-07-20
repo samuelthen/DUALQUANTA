@@ -1,0 +1,4 @@
+# RAFT-small + flow-guided DCN, no PreDenoiser — raw PixelUnshuffle mean as flow input
+_base: base.yaml
+model:
+  mode: raft_small_raw

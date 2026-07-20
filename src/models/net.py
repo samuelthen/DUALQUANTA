@@ -39,7 +39,8 @@ HALF_WIN = SEQ_LEN // 2
 _MODES = (
     "single_frame", "no_align",
     "dcn_h2", "dcn_h4", "dcn_h8", "dcn_h16",
-    "spynet_dcn", "cascading_dcn", "oracle_flow", "shift_net",
+    "spynet_dcn", "raft_small_dcn", "raft_small_raw",
+    "cascading_dcn", "oracle_flow", "shift_net",
 )
 
 
@@ -108,6 +109,15 @@ class SPADNet(nn.Module):
             self.denoiser = PreDenoiser(c1, nb=4)
             self.spynet   = SpyNet()
             self.align    = FlowGuidedDCNAlign(T, c1)
+        elif mode == "raft_small_dcn":
+            self.denoiser    = PreDenoiser(c1, nb=4)
+            self.raft_iters  = 4          # GRU iterations; fewer = faster training
+            self._init_raft_small(raft_ckpt)
+            self.align       = FlowGuidedDCNAlign(T, c1)
+        elif mode == "raft_small_raw":
+            self.raft_iters  = 4
+            self._init_raft_small(raft_ckpt)
+            self.align       = FlowGuidedDCNAlign(T, c1)
         elif mode == "cascading_dcn":
             self.cas3 = CascadeLevel(c3, bc=c1)
             self.cas2 = CascadeLevel(c2, bc=c1)
@@ -159,6 +169,19 @@ class SPADNet(nn.Module):
         except Exception as e:
             warnings.warn(f"[Oracle] RAFT unavailable ({e}). Using SpyNetRGB fallback.")
             self.raft_fb = SpyNetRGB()
+
+    def _init_raft_small(self, raft_ckpt=""):
+        try:
+            from torchvision.models.optical_flow import raft_small
+        except ImportError as e:
+            raise ImportError(f"raft_small_dcn requires torchvision>=0.13: {e}")
+        self.raft_s = raft_small(weights=None)
+        if raft_ckpt and os.path.isfile(raft_ckpt):
+            sd = torch.load(raft_ckpt, map_location='cpu', weights_only=True)
+            self.raft_s.load_state_dict(sd, strict=False)
+            print(f"[RAFT-S] loaded weights from {raft_ckpt}")
+        else:
+            print("[RAFT-S] initialised from scratch (end-to-end training)")
 
     def train(self, mode=True):
         super().train(mode)
@@ -215,6 +238,8 @@ class SPADNet(nn.Module):
         elif m == "dcn_h16":        return self._dcn_h16(spad)
         elif m == "shift_net":      return self._shift_net(spad)
         elif m == "spynet_dcn":     return self._spynet(spad)
+        elif m == "raft_small_dcn": return self._raft_small(spad)
+        elif m == "raft_small_raw": return self._raft_small_raw(spad)
         elif m == "cascading_dcn":  return self._cascade(spad)
         elif m == "oracle_flow":
             assert clean_rgb is not None, "oracle_flow requires clean_rgb"
@@ -323,6 +348,63 @@ class SPADNet(nn.Module):
             if t != self.C:
                 # Clamp to ±64px: prevents extreme offsets causing deform_conv2d overflow
                 fll[t] = self.spynet(dn[t], cg).clamp(-64., 64.)
+        fused = self.align(fl, fll)
+        x, s1 = self.dn1(fused)
+        x, s2 = self.dn2(x)
+        x, s3 = self.dn3(x)
+        return self._decode(x, s3, s2, s1), None
+
+    def _raft_small(self, spad):
+        """RAFT-small optical flow (end-to-end) + flow-guided DCN at H/2.
+
+        Mirrors _spynet: PreDenoiser produces a 1-ch denoised frame per
+        timestep; channels are repeated to 3ch for RAFT-small's feature
+        extractor.  RAFT runs in fp32 (autocast disabled) matching the
+        oracle_flow treatment to avoid correlation-volume overflow.
+        """
+        raw, f0, B, T, H, W = self._enc_batch(spad)
+        raw4 = raw.reshape(B, T, 4, H // 2, W // 2)
+        fl   = list(f0.reshape(B, T, self.c1, H // 2, W // 2).unbind(1))
+
+        # Denoised 1-ch frames at H/2; repeated to 3ch for RAFT input
+        dn  = [self.denoiser(raw4[:, t]).mean(1, keepdim=True).float()
+               for t in range(T)]
+        cg3 = dn[self.C].repeat(1, 3, 1, 1)   # (B, 3, H/2, W/2)
+
+        fll = [None] * T
+        for t in range(T):
+            if t != self.C:
+                src3 = dn[t].repeat(1, 3, 1, 1)
+                with autocast("cuda", enabled=False):
+                    flow = self.raft_s(cg3, src3,
+                                       num_flow_updates=self.raft_iters)[-1]
+                fll[t] = flow.clamp(-64., 64.)
+
+        fused = self.align(fl, fll)
+        x, s1 = self.dn1(fused)
+        x, s2 = self.dn2(x)
+        x, s3 = self.dn3(x)
+        return self._decode(x, s3, s2, s1), None
+
+    def _raft_small_raw(self, spad):
+        """RAFT-small on raw PixelUnshuffle mean — no PreDenoiser."""
+        raw, f0, B, T, H, W = self._enc_batch(spad)
+        raw4 = raw.reshape(B, T, 4, H // 2, W // 2)
+        fl   = list(f0.reshape(B, T, self.c1, H // 2, W // 2).unbind(1))
+
+        # Average 4 PUS channels directly — no learned denoising
+        dn  = [raw4[:, t].mean(1, keepdim=True).float() for t in range(T)]
+        cg3 = dn[self.C].repeat(1, 3, 1, 1)
+
+        fll = [None] * T
+        for t in range(T):
+            if t != self.C:
+                src3 = dn[t].repeat(1, 3, 1, 1)
+                with autocast("cuda", enabled=False):
+                    flow = self.raft_s(cg3, src3,
+                                       num_flow_updates=self.raft_iters)[-1]
+                fll[t] = flow.clamp(-64., 64.)
+
         fused = self.align(fl, fll)
         x, s1 = self.dn1(fused)
         x, s2 = self.dn2(x)

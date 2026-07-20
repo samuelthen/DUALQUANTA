@@ -359,13 +359,23 @@ _OLD_MODE_MAP = {
 }
 
 
+def _infer_stage1_mode(state: dict, T: int, bc: int) -> str:
+    """Infer SPADNet alignment mode from checkpoint weight shapes."""
+    if "align.beta" not in state:
+        return "dcn_h8"
+    c = state["align.beta"].shape[1] // T
+    return {bc: "dcn_h2", bc*2: "dcn_h4", bc*4: "dcn_h8", bc*8: "dcn_h16"}.get(c, "dcn_h8")
+
+
 def load_stage1(ckpt_path: str, device, T: int = SEQ_LEN) -> Optional[SPADNet]:
     if not ckpt_path or not os.path.isfile(ckpt_path):
         return None
     ck   = load_checkpoint(ckpt_path, device)
-    raw  = ck.get("mode") or ck.get("args", {}).get("mode", "dcn_h4")
+    bc   = (ck.get("args") or {}).get("base_c", None) or \
+           ck["model"]["stem.weight"].shape[0]
+    raw  = ck.get("mode") or (ck.get("args") or {}).get("mode", None) or \
+           _infer_stage1_mode(ck["model"], T, bc)
     mode = _OLD_MODE_MAP.get(raw, raw)
-    bc   = ck.get("args", {}).get("base_c", 32)
     m    = SPADNet(T=T, bc=bc, mode=mode).to(device)
     m.load_state_dict(ck["model"], strict=True)
     m.eval()
