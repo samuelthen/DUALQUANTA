@@ -11,6 +11,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Dict, Iterable, List, Tuple
 
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -114,8 +116,43 @@ def compute_dalign_native(
     `center_index` frame. This matches the DCN neighbor-to-center alignment
     convention used by the offset-energy extractor.
     """
-    x_lin = np.power(np.clip(seq_rgb, 0.0, 1.0), 2.2).astype(np.float64)
-    alpha = ppp / max(float(x_lin.sum(axis=-1).mean()), 1e-8)
+    return compute_dalign_components(
+        raft_model,
+        raft_transforms,
+        seq_rgb,
+        frame_paths,
+        neighbor_index,
+        center_index,
+        device,
+        ppp=ppp,
+        bins=bins,
+    )["D_align"]
+
+
+def compute_dalign_components(
+    raft_model,
+    raft_transforms,
+    seq_rgb: np.ndarray,
+    frame_paths: List[Path],
+    neighbor_index: int,
+    center_index: int,
+    device: torch.device,
+    ppp: float = PPP,
+    bins: int = BINS,
+    gamma: float = 2.2,
+) -> Dict[str, np.ndarray]:
+    """Compute and return all maps used to form native-resolution D_align.
+
+    Exposure scaling uses the mean intensity over the complete 11-frame burst,
+    matching the SPAD simulation and the 31-scene offset-energy analysis.
+    """
+    if not 0 <= neighbor_index < len(frame_paths):
+        raise IndexError(f"neighbor_index={neighbor_index} outside sequence")
+    if not 0 <= center_index < len(frame_paths):
+        raise IndexError(f"center_index={center_index} outside sequence")
+
+    x_lin = np.power(np.clip(seq_rgb, 0.0, 1.0), gamma).astype(np.float64)
+    alpha = ppp / max(float(x_lin.sum(axis=-1).mean()), EPS)
     lam = alpha * x_lin[neighbor_index].sum(axis=-1)
 
     gx = sobel(lam, axis=1) / 8.0
@@ -128,13 +165,67 @@ def compute_dalign_native(
     img1 = img1.permute(2, 0, 1).unsqueeze(0)
     img2 = img2.permute(2, 0, 1).unsqueeze(0)
     im1, im2 = raft_transforms(img1, img2)
+    if im1.shape[-2] % 8 or im1.shape[-1] % 8:
+        raise ValueError(f"RAFT input dimensions must be divisible by 8, got {tuple(im1.shape[-2:])}")
 
     with torch.no_grad():
         flow = raft_model(im1.to(device), im2.to(device))[-1][0].float().cpu().numpy()
     u = flow[0].astype(np.float64)
     v = flow[1].astype(np.float64)
     d_n = (u * gx + v * gy) / (grad_mag + EPS)
-    return np.clip((contrast * d_n) ** 2 * kappa(lam, bins), 0.0, None)
+    photon_factor = kappa(lam, bins)
+    d_align = np.clip((contrast * d_n) ** 2 * photon_factor, 0.0, None)
+    return {
+        "lambda": lam,
+        "grad_x": gx,
+        "grad_y": gy,
+        "grad_mag": grad_mag,
+        "contrast": contrast,
+        "flow_u": u,
+        "flow_v": v,
+        "d_n": d_n,
+        "kappa": photon_factor,
+        "D_align": d_align,
+        "alpha": np.asarray(alpha, dtype=np.float64),
+    }
+
+
+def plot_dalign_linear_clipped(
+    d_align: np.ndarray,
+    out_path: Path,
+    percentile: float = 99.0,
+    colorbar: bool = True,
+    cmap: str = "inferno",
+    dpi: int = 150,
+) -> float:
+    """Save a linearly normalized D_align heatmap clipped at a percentile.
+
+    Percentile clipping affects only the color limits. The returned value is
+    the physical D_align value mapped to the top of the colormap.
+    """
+    if not 0.0 < percentile <= 100.0:
+        raise ValueError(f"percentile must be in (0, 100], got {percentile}")
+    finite = np.asarray(d_align, dtype=np.float64)
+    finite = finite[np.isfinite(finite)]
+    if finite.size == 0:
+        raise ValueError("D_align map has no finite values")
+    vmax = max(float(np.percentile(finite, percentile)), np.finfo(np.float64).eps)
+
+    fig, ax = plt.subplots(figsize=(11.0, 5.5))
+    image = ax.imshow(d_align, cmap=cmap, vmin=0.0, vmax=vmax, interpolation="nearest")
+    ax.axis("off")
+    if colorbar:
+        cax = ax.inset_axes([0.03, 0.08, 0.28, 0.04])
+        bar = fig.colorbar(image, cax=cax, orientation="horizontal")
+        bar.ax.tick_params(colors="white", labelsize=8, width=0.8)
+        bar.outline.set_edgecolor("white")
+
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.subplots_adjust(left=0.0, right=1.0, bottom=0.0, top=1.0)
+    fig.savefig(out_path, dpi=dpi, bbox_inches=None, pad_inches=0)
+    plt.close(fig)
+    return vmax
 
 
 def get_or_compute_dalign_native(

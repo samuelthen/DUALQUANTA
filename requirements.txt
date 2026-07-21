@@ -1,6 +1,9 @@
 torch>=2.0
 torchvision>=0.15
 numpy
+scipy
+matplotlib
+pillow
 opencv-python
 scikit-image
 tqdm

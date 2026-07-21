@@ -67,6 +67,10 @@ pip install -r requirements.txt
 
 Key dependencies: `torch>=2.0`, `torchvision`, `numpy`, `opencv-python`, `scikit-image`, `lpips`, `pyyaml`, `tqdm`, `huggingface_hub`.
 
+### Alignment analysis
+
+The repository includes self-contained CLIs for the 31-scene DCN offset-energy analysis and the paper's linear p99-clipped `D_align` heatmap. See [`ANALYSIS_DALIGN.md`](ANALYSIS_DALIGN.md) for the equations, conventions, cache layout, and reproduction commands.
+
 ---
 
 ## Datasets

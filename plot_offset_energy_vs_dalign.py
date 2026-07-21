@@ -25,6 +25,9 @@ import numpy as np
 import torch
 from torchvision.models.optical_flow import Raft_Large_Weights, raft_large
 
+ROOT = Path(__file__).resolve().parent
+os.environ.setdefault("MPLCONFIGDIR", str(ROOT / ".matplotlib-cache"))
+
 from src.analysis.offset_energy import (
     HALF_WIN,
     LABELS,
@@ -42,7 +45,6 @@ from src.models.net import SPADNet
 from src.utils import load_checkpoint, load_config
 
 
-ROOT = Path(__file__).resolve().parent
 WORKSPACE_ROOT = ROOT.parent
 HF_REPO_ID = "samuelthen/DUALQUANTA"
 
