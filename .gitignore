@@ -9,6 +9,7 @@ wandb/
 runs/
 logs/
 *.log
+.matplotlib-cache/
 .DS_Store
 *.swp
 checkpoints/
